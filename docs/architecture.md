@@ -1,0 +1,68 @@
+# Architecture — Hollyport PDF Table-Extraction Pipeline
+
+This pipeline extracts tabular data from financial-statement PDFs into clean, structured Delta
+tables. It runs as a Databricks Lakeflow job (a 4-task DAG deployed via a Databricks Asset
+Bundle) on serverless compute. After parsing, `raw_parsed` **fans out into two parallel
+branches** — table *extraction* and table *metadata* — which are later **joined** to stitch
+multi-page ("continued") tables back together.
+
+The diagram below reflects the flow **as implemented in code** (`01_Raw_parse_task`,
+`02_Extract_task`, `02.1_Extract_table_metadata_task`, `03_Merge_multipage_table`).
+
+```mermaid
+flowchart TD
+    PDF[/"Source PDFs — UC Volume<br/>one PDF per fund under sources/hollyport_test"/]
+    PARSE["ai_parse_document()<br/>parse each PDF, explode document.elements"]
+    RAW[("raw_parsed — Delta<br/>all elements: title, section_header,<br/>page_header, table, text…")]
+
+    PDF -->|"READ_FILES (binaryFile)"| PARSE
+    PARSE --> RAW
+    RAW --> A1
+    RAW --> B1
+
+    subgraph A["Branch A · Table extraction — Task 2"]
+        direction TB
+        A1["Keep type=table,<br/>assign table_id via dense_rank()"]
+        AST[("parsed_table_elements_staging")]
+        A2["ai_query() → LLM<br/>HTML table → JSON array<br/>(model from variables.yml, distributed)"]
+        ABATCH[("all_table_data_batch")]
+        A3["Custom UDF post_process_table<br/>fix_misaligned_headers +<br/>merge_partial_rows → VARIANT"]
+        AVAR[("extracted_table_data_variant")]
+        A1 --> AST --> A2 --> ABATCH --> A3 --> AVAR
+    end
+
+    subgraph B["Branch B · Table metadata — Task 3"]
+        direction TB
+        B1["Window fn: nearest section_header /<br/>page_header / title per element"]
+        BMETA[("table_metadata")]
+        B2["Normalize headers (strip 'continued'),<br/>group by page/section/title"]
+        BGRP[("grouped_table_metadata")]
+        B1 --> BMETA --> B2 --> BGRP
+    end
+
+    AVAR --> JOIN
+    BGRP --> JOIN
+    JOIN{{"JOIN on (file_name, element_id)<br/>merge multi-page / 'continued' tables:<br/>reassign table_id to group minimum"}}
+    JOIN --> OUT[("extracted_table_data_variant_merged<br/>Delta — FINAL OUTPUT")]
+
+    classDef source fill:#cfe3fc,stroke:#4a80c0,color:#111
+    classDef ai fill:#e6d8f5,stroke:#8256b8,color:#111
+    classDef delta fill:#ededed,stroke:#999,color:#111
+    classDef custom fill:#d7edd0,stroke:#5a9e52,color:#111
+    classDef meta fill:#fdeecb,stroke:#d9a441,color:#111
+    classDef joinc fill:#cdeeea,stroke:#3fa393,color:#111
+    classDef output fill:#bfe6c0,stroke:#3f9d54,color:#111
+
+    class PDF source
+    class PARSE ai
+    class A2 ai
+    class RAW,AST,ABATCH,AVAR,BMETA,BGRP delta
+    class A1,A3 custom
+    class B1,B2 meta
+    class JOIN joinc
+    class OUT output
+```
+
+**Legend:** 🟦 Source (UC Volume) · 🟪 Databricks AI function (`ai_parse_document`, `ai_query`) · 🟩 Custom Python (`post_process_table` + `fix_misaligned_headers` + `merge_partial_rows`) · ⬜ Delta checkpoint table · 🟧 Table-metadata branch · ✅ Join & final output
+
+A rendered image of this diagram is also available at [`architecture.png`](architecture.png).
