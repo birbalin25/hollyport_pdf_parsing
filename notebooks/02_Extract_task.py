@@ -139,12 +139,6 @@ print(f"Step 1 complete: {staging_count} table elements extracted and staged.")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC
-# MAGIC select * from serverless_stable_14ey07_catalog.hollyport.parsed_table_elements_staging --where file_name="Permira V - FS - 2024-12-31_Redacted.pdf"
-
-# COMMAND ----------
-
 # DBTITLE 1,Step 2: Distributed LLM extraction with ai_query + post-processing
 # ---------------------------------------------------------------------------
 # Step 2: Read staged table elements, call ai_query() distributed across
@@ -171,24 +165,15 @@ sql_template = PROMPT_TEMPLATE.replace("'", "''")
 # failOnError => false returns struct(response, errorStatus) for graceful error handling
 tables_with_llm = tables_df.withColumn(
     "llm_result",
-    # F.expr(f"""
-    #     ai_query(
-    #         'databricks-claude-sonnet-4-6',
-    #         concat('{sql_template}', raw_html),
-    #         modelParameters => named_struct('max_tokens', 4000),
-    #         failOnError => false
-    #     )
-    # """)
-
     F.expr(f"""
         ai_query(
-            'databricks-gpt-oss-120b',
+            'databricks-claude-sonnet-4-6',      
             concat('{sql_template}', raw_html),
             modelParameters => named_struct('max_tokens', 4000),
             failOnError => false
         )
     """)
-    # databricks-gpt-oss-20b   ##  databricks-qwen3-next-80b-a3b-instruct
+    ## try out databricks-gpt-oss-20b or databricks-gpt-oss-120b   
 
 
 )
@@ -201,7 +186,6 @@ tables_processed = (
     .withColumn("processed", post_process_table(F.col("raw_html"), F.col("llm_output")))
 )
 
-# display(tables_processed)
 # Build final result DataFrame (include all records - successes and failures)
 result_df = (
     tables_processed
@@ -220,8 +204,7 @@ result_df = (
         F.col("file_location"),
         F.col("table_id"),
         F.col("llm_output"),
-        F.col("llm_error")        
-        # F.col("processed") ##need to remove
+        F.col("llm_error")
     )
 )
 
@@ -229,12 +212,6 @@ result_df = (
 result_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("serverless_stable_14ey07_catalog.hollyport.all_table_data_batch")
 
 
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC
-# MAGIC select * from serverless_stable_14ey07_catalog.hollyport.all_table_data_batch-- where file_name="Permira V - FS - 2024-12-31_Redacted.pdf"
 
 # COMMAND ----------
 
@@ -274,7 +251,6 @@ result_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(
 "serverless_stable_14ey07_catalog.hollyport.extracted_table_data_variant"
 )
 print(f"Saved {spark.table('serverless_stable_14ey07_catalog.hollyport.extracted_table_data_variant').count()} rows")
-# display(spark.table("serverless_stable_14ey07_catalog.hollyport.extracted_table_data_variant"))
 
 # COMMAND ----------
 

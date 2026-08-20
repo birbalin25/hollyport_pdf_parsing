@@ -88,9 +88,3 @@ result_df = (
 )
 
 display(result_df)
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC
-# MAGIC select * from serverless_stable_14ey07_catalog.hollyport.extracted_table_data_variant_merged where file_name=""

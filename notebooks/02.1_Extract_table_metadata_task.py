@@ -128,7 +128,6 @@ grouped_df = (
     .orderBy(F.col("count_of_elements").desc())
 )
 grouped_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable("serverless_stable_14ey07_catalog.hollyport.grouped_table_metadata")
-# display(grouped_df)
 
 # COMMAND ----------
 

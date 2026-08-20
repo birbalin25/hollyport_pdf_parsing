@@ -26,9 +26,6 @@ SELECT
 FROM READ_FILES(
 --   '/Volumes/serverless_stable_14ey07_catalog/hollyport/vol1/unit_test/260331-FS-Bain X.pdf',
  '/Volumes/serverless_stable_14ey07_catalog/hollyport/vol1/sources/hollyport_test/*/*.pdf',
--- '/Volumes/serverless_stable_14ey07_catalog/hollyport/vol1/unit_test/Permira V - FS - 2024-12-31_Redacted.pdf',
--- '/Volumes/serverless_stable_14ey07_catalog/hollyport/vol1/unit_test/custom/Meridian Capital Partners IV - Schedule of Investments.pdf',
--- '/Volumes/serverless_stable_14ey07_catalog/hollyport/vol1/unit_test/{260331-FS-Bain X.pdf,Permira V - FS - 2024-12-31_Redacted.pdf}',
   format => 'binaryFile'
 )
 """)
@@ -50,6 +47,3 @@ tables_df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(
 # MAGIC %sql
 # MAGIC
 # MAGIC select * from serverless_stable_14ey07_catalog.hollyport.raw_parsed --where file_name="Permira V - FS - 2024-12-31_Redacted.pdf"
-
-# COMMAND ----------
-
