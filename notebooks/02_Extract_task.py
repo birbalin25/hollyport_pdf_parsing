@@ -11,7 +11,7 @@ from pyspark.sql.window import Window
 from pyspark.sql.types import (
     ArrayType, IntegerType, MapType, StringType, StructField, StructType
 )
-from pdf_table_utils import fix_misaligned_headers, merge_partial_rows
+from utils.pdf_table_utils import fix_misaligned_headers, merge_partial_rows
 
 for_test = True
 
