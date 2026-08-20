@@ -1,0 +1,56 @@
+# Lakeflow job: Hollyport PDF table-extraction DAG.
+# Tasks run on serverless compute (no cluster specified). Shared config is passed
+# as job-level parameters sourced from variables.yml; each notebook reads what it
+# needs via dbutils.widgets.get(...).
+
+resources:
+  jobs:
+    hollyport_table_extraction:
+      name: "Hollyport PDF table extraction [${bundle.target}]"
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: volume
+          default: ${var.volume}
+        - name: source_subpath
+          default: ${var.source_subpath}
+        - name: model
+          default: ${var.model}
+        - name: max_tokens
+          default: ${var.max_tokens}
+        - name: prompt
+          default: ${var.prompt}
+        # Deployed location of util/ so notebooks can import pdf_table_utils.
+        - name: util_path
+          default: ${workspace.file_path}/util
+
+      tasks:
+        # Task#1 — parse PDFs with ai_parse_document -> raw_parsed
+        - task_key: Raw_parse_task_01
+          notebook_task:
+            notebook_path: ../src/Raw_parse_task-01.py
+
+        # Task#2 — ai_query extraction -> extracted_table_data_variant (depends on #1)
+        - task_key: Extract_task_02
+          depends_on:
+            - task_key: Raw_parse_task_01
+          notebook_task:
+            notebook_path: ../src/Extract_task-02.py
+
+        # Task#3 — table-header metadata + grouping (depends on #1)
+        - task_key: Extract_table_metadata_task_02_1
+          depends_on:
+            - task_key: Raw_parse_task_01
+          notebook_task:
+            notebook_path: ../src/Extract_table_metadata_task-02.1.py
+
+        # Task#4 — merge multi-page tables (depends on #2 and #3)
+        - task_key: merge_multipage_table_03
+          depends_on:
+            - task_key: Extract_task_02
+            - task_key: Extract_table_metadata_task_02_1
+          notebook_task:
+            notebook_path: ../src/merge_multipage_table-03.py

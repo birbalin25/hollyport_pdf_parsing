@@ -1,0 +1,45 @@
+# Databricks Asset Bundle for the Hollyport PDF table-extraction pipeline.
+#
+# Deploys the four notebooks as a single Lakeflow (Jobs) DAG:
+#   Raw_parse_task-01  ->  Extract_task-02
+#                      ->  Extract_table_metadata_task-02.1
+#   (Extract_task-02 + Extract_table_metadata_task-02.1)  ->  merge_multipage_table-03
+#
+# All environment/config values live in variables.yml; per-environment overrides
+# live in the `targets` block below. All three targets deploy via the `fevm`
+# CLI profile (same workspace), isolated by catalog + bundle root path.
+#
+# Usage:
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev      # or -t stage / -t prod
+#   databricks bundle run hollyport_table_extraction -t dev
+
+bundle:
+  name: hollyport_table_extraction
+
+include:
+  - variables.yml
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development      # prefixes resources with [dev <user>], pauses schedules
+    default: true
+    workspace:
+      profile: fevm
+    variables:
+      catalog: serverless_stable_14ey07_catalog_dev
+
+  stage:
+    # Consider `mode: production` once deploying from CI.
+    workspace:
+      profile: fevm
+    variables:
+      catalog: serverless_stable_14ey07_catalog_stage
+
+  prod:
+    # Consider `mode: production` once deploying from CI.
+    workspace:
+      profile: fevm
+    variables:
+      catalog: serverless_stable_14ey07_catalog

@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Databricks Asset Bundle local state (environment-specific; not source)
+.databricks/

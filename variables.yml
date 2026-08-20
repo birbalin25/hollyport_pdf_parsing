@@ -1,0 +1,77 @@
+# All tunable pipeline configuration, in one place.
+#
+# `catalog` is overridden per environment in databricks.yml (targets block).
+# Everything else is shared across DEV/STAGE/PROD unless you add an override.
+# These are surfaced to the notebooks as job parameters (see resources/) and
+# read there via dbutils.widgets.get(...).
+
+variables:
+  catalog:
+    description: Unity Catalog holding all pipeline tables and the source volume. Overridden per target.
+    default: serverless_stable_14ey07_catalog
+
+  schema:
+    description: Schema (database) for all pipeline tables. Same across environments.
+    default: hollyport
+
+  volume:
+    description: UC volume (under catalog/schema) that stores the source PDFs.
+    default: vol1
+
+  source_subpath:
+    description: Glob under the volume that matches the source PDFs to parse.
+    default: sources/hollyport_test/*/*.pdf
+
+  model:
+    description: Databricks model-serving endpoint used by ai_query for table extraction.
+    default: databricks-gpt-oss-120b
+
+  max_tokens:
+    description: max_tokens passed to ai_query modelParameters.
+    default: 4000
+
+  prompt:
+    description: Extraction prompt template prepended to each HTML table before ai_query.
+    default: |
+      You are a Financial data extraction expert. Parse the following HTML table into a JSON array of records.
+
+      IMPORTANT RULES:
+
+      1. When one column contains descriptive values across multiple consecutive rows while all other columns in those rows are empty/null, this indicates a multi-line description split across rows. Merge those rows (may be two or more rows as required) by concatenating the descriptive values (joined by "\n") into the corresponding column of the next row that has values in multiple columns, and remove the partial rows. Example: ["A","",""], ["B","",""], ["C","$100","$200"] -> ["A\nB\nC","$100","$200"].
+      2. If the HTML has colspan="2" on any header - treat it as a SINGLE column.
+      3. Keep numeric values as strings (preserve commas and $ signs).
+      4. Return ONLY a valid JSON array, no markdown, no explanation.
+      5. Keep the JSON columns in the same order as they appear in the html table.
+      6. The currency symbol like $, etc sometimes is far apart from the number. As such, they may appear as separate columns in html data. In such case, merge them into a single column.
+      7. If a table row contains multiple values separated by <br> tags, split it into separate JSON records, with each <br>-separated value becoming its own record. Do not duplicate columns that contain only a single-line value; leave those fields empty in the additional records unless the column itself contains value in multiple lines.
+      8. If any header column (<th>) in the HTML is empty or blank, assign it a name like column1_llm, column2_llm, column3_llm and so on. Never use an empty string as a JSON key.
+      9. HEADER NAME CLEANUP (MANDATORY for EVERY header — no exceptions):
+         a) Replace any <br>, <br/>, or <br /> tags in header text with a single space. Never put "\n" in a JSON key.
+         b) Then strip any trailing currency-unit suffix from the key: " €'000", " €m", " €bn", or " €" (and any <sup>…</sup> after it). If the entire header was just a suffix (e.g., "€'000"), it becomes empty — apply Rule 8.
+         c) VERIFY: If any JSON key still contains "€'000", "€m", "€bn", trailing "€", or "\n", fix it before outputting.
+         Examples:
+         - "Cost €'000" → "Cost" | "LP1 €m" → "LP1" | "Level 1 €'000" → "Level 1"
+         - "LP1<br>€'000" → "LP1" | "December 2024<br>Total<br>€'000" → "December 2024 Total"
+         - "Net Asset Value" → no change | "€'000" alone → apply Rule 8 (column1_llm etc.)
+      10. COLUMN SPLITTING FOR MERGED NUMERIC+TEXT CELLS: After applying Rule 1 (multi-row merging), or if a single HTML cell already contains both a numeric quantity and unrelated descriptive text, split them into two JSON columns:
+         - The ORIGINAL column (whatever its header name is) must contain ONLY the numeric quantity — nothing else.
+         - A NEW column called "Description" must contain ALL remaining text from that cell: any names, labels, or descriptions that appeared BEFORE the number, AND any descriptive text that appeared AFTER the number. Preserve their original order, joined by "\n".
+
+         HOW TO DECIDE WHETHER TO SPLIT: Look at the ENTIRE table, not just one cell. If MOST data rows in the same column consistently show the same pattern — either "numeric quantity followed by text" or "text followed by numeric quantity" — then this column has a merged-column problem and ALL such rows should be split. A consistent pattern across multiple rows is strong evidence that two visual columns were merged during PDF parsing. Do NOT split based on a single isolated cell that happens to contain a number.
+
+         A numeric quantity is a standalone number that represents a count, amount, or measurement (e.g., number of shares, par value, units held). It is NOT part of a name or description. Use your judgment to distinguish a standalone quantity from numbers that are part of descriptive text (e.g., "7.00%" in "7.00% Preferred Units" is part of the description, not a standalone quantity).
+
+         Examples:
+         - Cell: "Company ABC:\nSubsidiary XYZ\n$ 23,796,803 5.00% Senior Notes due 2031"
+           -> Original column: "$ 23,796,803"
+           -> Description: "Company ABC:\nSubsidiary XYZ\n5.00% Senior Notes due 2031"
+         - Cell: "Entity Name, LLC\n692,353 Class A Units"
+           -> Original column: "692,353"
+           -> Description: "Entity Name, LLC\nClass A Units"
+         - Cell with ONLY a number (e.g., "$ 601,258,723") -> do NOT split. No Description needed.
+         - Cell with no standalone quantity (e.g., "Total" or a summary label) -> do NOT split, keep as-is in the original column with Description as empty string.
+
+         This rule applies to ANY column regardless of its header name. The key signal is: a CONSISTENT pattern across rows where cells mix a standalone numeric quantity alongside unrelated text such as entity names or descriptions.
+
+
+      HTML Table:
